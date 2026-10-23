@@ -1,0 +1,47 @@
+# Example service. Copy what you need into your own compose file.
+# Replace /path/to/vpn-stack with the VPN project's directory. The path
+# inside the container must be the same absolute path as on the host,
+# because `docker compose` resolves bind mounts on the host.
+
+services:
+  vpn-switcher:
+    build: .
+    image: vpn-switcher
+    restart: unless-stopped
+    # APP_UID/APP_GID must be able to write the VPN stack's .env file.
+    # DOCKER_GID is the group that owns the Docker socket, not the user's
+    # group:  stat -c '%g' /var/run/docker.sock
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    group_add:
+      - "${DOCKER_GID:?Set DOCKER_GID to the group id of the Docker socket}"
+    ports:
+      # Bind a tailnet address (or 127.0.0.1), not a public interface.
+      - "${LISTEN_ADDRESS:-127.0.0.1}:8080:8080"
+    env_file:
+      - .env
+    environment:
+      STACK_DIR: /path/to/vpn-stack
+      VPN_SERVICE: gluetun
+      DEPENDENT_SERVICES: qbittorrent
+      # Reach Gluetun's published HTTP proxy via the host. Optional.
+      GLUETUN_PROXY_URL: http://host.docker.internal:8888
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /path/to/vpn-stack:/path/to/vpn-stack
+
+# In the VPN stack's own compose file, point Gluetun at the variables this
+# app writes. Do not copy your WireGuard keys into this example.
+#
+# services:
+#   gluetun:
+#     environment:
+#       - SERVER_COUNTRIES=${VPN_SERVER_COUNTRIES:-}
+#       - SERVER_CITIES=${VPN_SERVER_CITIES:-}
+#       # Leave SERVER_REGIONS unset, or set a region that contains every
+#       # city you might pick. Gluetun ANDs the filters, so a fixed region
+#       # will reject cities outside it.
+#       # HTTPPROXY=on
+#     ports:
+#       - "8888:8888/tcp"   # only so this app can check the exit IP
