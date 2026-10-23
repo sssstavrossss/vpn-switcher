@@ -47,7 +47,15 @@ templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app. uvicorn calls this with no arguments (`--factory`)."""
     settings = settings if settings is not None else Settings.from_env()
-    app = FastAPI(title="VPN switcher")
+    # Swagger, ReDoc, and /openapi.json are off for everyone, including a
+    # signed-in browser. They only describe the routes. Without a session
+    # the app serves the login page and the files under /static.
+    app = FastAPI(
+        title="VPN switcher",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
     app.state.settings = settings
     app.state.cache = LocationCache(settings)
     app.state.limiter = LoginLimiter(settings.login_max_attempts, settings.login_window_seconds)
