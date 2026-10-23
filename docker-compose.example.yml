@@ -25,6 +25,10 @@ services:
       DEPENDENT_SERVICES: qbittorrent
       # Reach Gluetun's published HTTP proxy via the host. Optional.
       GLUETUN_PROXY_URL: http://host.docker.internal:8888
+      # Optional. Better source for the city when none is saved in the
+      # stack .env. Publish Gluetun's control port (8000) to use it.
+      # GLUETUN_CONTROL_URL: http://host.docker.internal:8000
+      # GLUETUN_CONTROL_API_KEY: ${GLUETUN_CONTROL_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -45,3 +49,4 @@ services:
 #       # HTTPPROXY=on
 #     ports:
 #       - "8888:8888/tcp"   # only so this app can check the exit IP
+#       - "8000:8000/tcp"   # optional control server, for the auto-picked city

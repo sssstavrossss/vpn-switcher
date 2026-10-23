@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass
 
 import httpx
@@ -38,6 +39,9 @@ class Location:
     city: str
     label: str
     region: str
+    # ISO-style code from AirVPN ("NL"). Empty when the feed omitted it.
+    # Used to match an exit lookup that only returned a code.
+    country_code: str = ""
 
 
 def gluetun_city(location: str) -> str:
@@ -62,6 +66,86 @@ def find_location(locations: list[Location], country: str, city: str) -> Locatio
     return None
 
 
+def fold(text: str) -> str:
+    """Compare place names without accents or case.
+
+    Gluetun's control server says "Zürich"; AirVPN's list says "Zurich".
+    NFKD splits ü into "u" plus a combining mark. Dropping the mark
+    leaves "zurich" for both.
+    """
+    decomposed = unicodedata.normalize("NFKD", text.strip())
+    plain = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return plain.casefold()
+
+
+def match_observed(
+    locations: list[Location],
+    city: str | None,
+    country: str | None,
+    country_code: str | None = None,
+) -> Location | None:
+    """Find the list row for a city reported by the exit lookup.
+
+    One city of that name in the whole list is enough. Several cities
+    share names across countries (more than one Portland), so then the
+    country name or code has to narrow it to a single row. No match
+    means the switch stays off: we will not guess.
+    """
+    if not city or not city.strip():
+        return None
+    wanted = fold(gluetun_city(city))
+    hits = [
+        location
+        for location in locations
+        if fold(location.city) == wanted or fold(gluetun_city(location.label)) == wanted
+    ]
+    if not hits:
+        return None
+    if len(hits) == 1:
+        if _country_conflicts(hits[0], country, country_code):
+            return None
+        return hits[0]
+    narrowed = [location for location in hits if _country_matches(location, country, country_code)]
+    if len(narrowed) == 1:
+        return narrowed[0]
+    return None
+
+
+def _country_matches(location: Location, country: str | None, country_code: str | None) -> bool:
+    code = _code_of(country, country_code)
+    if code and location.country_code and code.casefold() == location.country_code.casefold():
+        return True
+    if country and not _is_country_code(country):
+        return fold(country) == fold(location.country)
+    return False
+
+
+def _country_conflicts(location: Location, country: str | None, country_code: str | None) -> bool:
+    """True only when both sides name a country and they disagree.
+
+    A 2-letter code with no code on the list row is not a conflict: we
+    cannot compare "NL" to "Netherlands" without the code.
+    """
+    if country and not _is_country_code(country):
+        return fold(country) != fold(location.country)
+    code = _code_of(country, country_code)
+    if code and location.country_code:
+        return code.casefold() != location.country_code.casefold()
+    return False
+
+
+def _code_of(country: str | None, country_code: str | None) -> str | None:
+    if country_code and _is_country_code(country_code):
+        return country_code
+    if country and _is_country_code(country):
+        return country
+    return None
+
+
+def _is_country_code(value: str) -> bool:
+    return len(value) == 2 and value.isalpha()
+
+
 def parse_locations(payload: dict, regions: frozenset[str]) -> list[Location]:
     """Filter, de-duplicate, and sort the status document.
 
@@ -82,6 +166,7 @@ def parse_locations(payload: dict, regions: frozenset[str]) -> list[Location]:
         country = str(server.get("country_name") or "").strip()
         raw_city = str(server.get("location") or "").strip()
         region = str(server.get("continent") or "").strip()
+        country_code = str(server.get("country_code") or "").strip().upper()
         if not country or not raw_city:
             continue
         if regions and region.casefold() not in regions:
@@ -92,7 +177,13 @@ def parse_locations(payload: dict, regions: frozenset[str]) -> list[Location]:
         key = (country.casefold(), city.casefold())
         if key in found:
             continue
-        found[key] = Location(country=country, city=city, label=raw_city, region=region)
+        found[key] = Location(
+            country=country,
+            city=city,
+            label=raw_city,
+            region=region,
+            country_code=country_code,
+        )
 
     return sorted(found.values(), key=lambda item: (item.country.casefold(), item.label.casefold()))
 

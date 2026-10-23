@@ -13,7 +13,8 @@
     <div>
       <p class="eyebrow">VPN switcher</p>
       <h1 id="place">{{ place }}</h1>
-      <p id="exit" class="muted">Checking exit IP…</p>
+      <p id="place-note" class="place-note"{% if not place_note %} hidden{% endif %}>{{ place_note or "" }}</p>
+      <p id="exit" class="muted">{{ exit_line or "Checking exit IP…" }}</p>
     </div>
     <form method="post" action="/logout">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

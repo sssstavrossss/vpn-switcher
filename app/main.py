@@ -10,7 +10,7 @@ Routes:
 - POST /logout    clear the session
 - GET  /          the location list
 - POST /switch    move the VPN
-- GET  /status    current exit IP, for the page to fill in after load
+- GET  /status    current exit IP and, when no city is saved, the auto-picked place
 """
 
 from __future__ import annotations
@@ -28,9 +28,15 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.auth import LoginLimiter, csrf_matches, new_csrf_token, verify_password
 from app.config import Settings
 from app.errors import AppError
-from app.ipcheck import fetch_exit_info
-from app.locations import LocationCache, find_location, same_place
-from app.switcher import SwitchGate, SwitchOutcome, perform_switch, read_current
+from app.ipcheck import ExitStatus, fetch_exit_info, resolve_exit
+from app.locations import LocationCache, same_place
+from app.switcher import DisplayLocation, SwitchGate, SwitchOutcome, choose_display, perform_switch, read_current
+
+# Long enough for one control-server call or a couple of proxy tries.
+# Short enough that a dead proxy does not hold the location list hostage.
+# /status keeps trying for the full IP_CHECK_TIMEOUT_SECONDS and then
+# corrects the heading.
+_PAGE_EXIT_WAIT = 4.0
 
 log = logging.getLogger(__name__)
 
@@ -112,20 +118,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def status(request: Request) -> JSONResponse:
         if not _authenticated(request):
             return JSONResponse({"ok": False, "detail": "Login required."}, status_code=401)
-        current = await asyncio.to_thread(read_current, settings)
-        exit_status = await asyncio.to_thread(fetch_exit_info, settings)
-        return JSONResponse(
-            {
-                "ok": True,
-                "country": current.country,
-                "city": current.city,
-                "warning": current.warning,
-                "exit_ip": exit_status.ip,
-                "exit_label": exit_status.label,
-                "exit_detail": exit_status.error,
-                "switching": request.app.state.gate.busy,
-            }
-        )
+        snapshot = await asyncio.to_thread(_status_snapshot, request.app)
+        snapshot["switching"] = request.app.state.gate.busy
+        return JSONResponse(snapshot)
 
     @app.post("/switch")
     async def switch(
@@ -201,6 +196,16 @@ def _index_page(
         load_error = exc.message
 
     current = read_current(settings)
+    # Saved country/city: the heading is that choice, and the exit line
+    # stays "Checking…" until /status (no extra lookup on this request).
+    # Nothing saved: ask where the tunnel actually is, so the first paint
+    # does not say "no location selected" above a real exit.
+    if current.country or current.city:
+        observed = None
+    else:
+        observed = resolve_exit(settings, timeout=_PAGE_EXIT_WAIT)
+    display = choose_display(current, observed, locations)
+
     if banner is None and load_error:
         banner, banner_kind = load_error, "error"
     elif banner is None and current.warning:
@@ -213,22 +218,17 @@ def _index_page(
         if key not in by_country:
             by_country[key] = {"country": location.country, "rows": []}
             groups.append(by_country[key])
+        selected = display.matched and same_place(
+            location.country, location.city, display.country, display.city
+        )
         by_country[key]["rows"].append(
             {
                 "country": location.country,
                 "city": location.city,
                 "label": location.label,
-                "selected": same_place(location.country, location.city, current.country, current.city),
+                "selected": selected,
             }
         )
-
-    matched = find_location(locations, current.country, current.city)
-    if matched:
-        place = f"{matched.label}, {matched.country}"
-    elif current.city or current.country:
-        place = ", ".join(part for part in (current.city, current.country) if part)
-    else:
-        place = "No location selected"
 
     if settings.regions:
         region_label = "Locations in " + ", ".join(sorted(name.title() for name in settings.regions))
@@ -241,7 +241,9 @@ def _index_page(
         {
             "csrf_token": _ensure_csrf(request),
             "groups": groups,
-            "place": place,
+            "place": display.heading,
+            "place_note": display.note,
+            "exit_line": _exit_line(observed),
             "banner": banner,
             "banner_kind": banner_kind,
             "region_label": region_label,
@@ -249,6 +251,51 @@ def _index_page(
         status_code=status_code,
     )
     return _no_store(response)
+
+
+def _status_snapshot(app: FastAPI) -> dict:
+    """Location heading plus the exit line. Runs in a worker thread."""
+    settings: Settings = app.state.settings
+    current = read_current(settings)
+    try:
+        locations = app.state.cache.get()
+    except AppError:
+        locations = []
+    if current.country or current.city:
+        # The heading is the saved choice. The exit lookup is only the
+        # address line under it.
+        exit_status = fetch_exit_info(settings)
+        display = choose_display(current, None, locations)
+    else:
+        exit_status = resolve_exit(settings)
+        display = choose_display(current, exit_status, locations)
+    return _status_body(current.warning, display, exit_status)
+
+
+def _status_body(warning: str | None, display: DisplayLocation, exit_status: ExitStatus) -> dict:
+    return {
+        "ok": True,
+        "country": display.country,
+        "city": display.city,
+        "label": display.label,
+        "place": display.heading,
+        "note": display.note,
+        "auto_picked": display.auto_picked,
+        "matched": display.matched,
+        "warning": warning,
+        "exit_ip": exit_status.ip,
+        "exit_label": exit_status.label,
+        "exit_detail": exit_status.error,
+    }
+
+
+def _exit_line(observed: ExitStatus | None) -> str | None:
+    """Text for the line under the heading, when we already looked it up."""
+    if observed is None:
+        return None
+    if observed.ip:
+        return f"Exit {observed.ip}" + (f" · {observed.label}" if observed.label else "")
+    return observed.error
 
 
 def _login_page(request: Request, *, error: str | None, status_code: int) -> Response:

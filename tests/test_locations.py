@@ -6,7 +6,7 @@ import pytest
 
 from app.config import Settings
 from app.errors import LocationError
-from app.locations import LocationCache, gluetun_city, parse_locations
+from app.locations import Location, LocationCache, gluetun_city, match_observed, parse_locations
 
 SAMPLE = {
     "servers": [
@@ -98,6 +98,47 @@ def test_a_city_stays_if_any_server_there_is_healthy() -> None:
     }
     locations = parse_locations(payload, frozenset({"europe"}))
     assert [item.city for item in locations] == ["Berlin"]
+
+
+def test_country_code_is_kept_for_matching() -> None:
+    payload = {
+        "servers": [
+            {
+                "country_name": "Netherlands",
+                "country_code": "nl",
+                "location": "Amsterdam",
+                "continent": "Europe",
+                "health": "ok",
+            }
+        ]
+    }
+    locations = parse_locations(payload, frozenset())
+    assert locations[0].country_code == "NL"
+
+
+def test_observed_exit_matches_a_list_row() -> None:
+    locations = [
+        Location("Netherlands", "Amsterdam", "Amsterdam", "Europe", "NL"),
+        Location("Switzerland", "Zurich", "Zurich", "Europe", "CH"),
+        Location("United States", "Phoenix Arizona", "Phoenix, Arizona", "America", "US"),
+        Location("United States", "Portland", "Portland", "America", "US"),
+        Location("United Kingdom", "Portland", "Portland", "Europe", "GB"),
+    ]
+    # ipinfo.io sends the country as a code. One Amsterdam in the list.
+    assert match_observed(locations, "Amsterdam", "NL").city == "Amsterdam"
+    # Gluetun spells the city with an umlaut; AirVPN does not.
+    zurich = match_observed(locations, "Zürich", "Switzerland")
+    assert zurich is not None and zurich.city == "Zurich"
+    # The comma form is Gluetun's "Phoenix Arizona".
+    phoenix = match_observed(locations, "Phoenix, Arizona", "US", "US")
+    assert phoenix is not None and phoenix.city == "Phoenix Arizona"
+    # Two Portlands. No country, so do not guess. A country picks one.
+    assert match_observed(locations, "Portland", None) is None
+    portland = match_observed(locations, "Portland", "United States")
+    assert portland is not None and portland.country_code == "US"
+    # The city exists, but the country disagrees.
+    assert match_observed(locations, "Amsterdam", "Germany") is None
+    assert match_observed(locations, "Berlin", "Germany") is None
 
 
 def test_missing_servers_list_is_an_error() -> None:

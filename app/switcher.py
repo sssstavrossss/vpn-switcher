@@ -22,8 +22,8 @@ from app.config import Settings
 from app.dockerctl import inspect_env, recreate, resolve_container, wait_until_healthy
 from app.envfile import read_env, update_env_file
 from app.errors import BadRequestError, DockerError, EnvEditError, LocationError, SwitchBusyError
-from app.ipcheck import fetch_exit_info
-from app.locations import LocationCache, find_location, same_place
+from app.ipcheck import ExitStatus, fetch_exit_info
+from app.locations import Location, LocationCache, find_location, match_observed, same_place
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +35,24 @@ class CurrentLocation:
     country: str
     city: str
     warning: str | None = None
+
+
+@dataclass(frozen=True)
+class DisplayLocation:
+    """What the heading and the selected switch should show.
+
+    `auto_picked` means the country and city env vars are empty and the
+    heading came from the tunnel's exit, not from a choice the user saved.
+    `matched` means that city is a row in the list, so its switch is on.
+    """
+
+    heading: str
+    note: str | None
+    country: str
+    city: str
+    label: str
+    auto_picked: bool
+    matched: bool
 
 
 @dataclass
@@ -120,6 +138,91 @@ def read_current(settings: Settings) -> CurrentLocation:
             f"but the env file is set to {_place(file_city, file_country)}."
         )
     return CurrentLocation(container_country, container_city, warning)
+
+
+def choose_display(
+    configured: CurrentLocation,
+    observed: ExitStatus | None,
+    locations: list[Location],
+) -> DisplayLocation:
+    """Heading for the page.
+
+    A saved country or city always wins. Those are what the next restart
+    will use, and what "already on this location" compares against.
+    When both are empty, Gluetun picked a server in the region by itself.
+    Name that server from `observed` (control server, or the exit lookup)
+    and turn on the matching switch. If the city cannot be read, say so.
+    "No location selected" would be wrong: the tunnel is already up.
+    """
+    if configured.country or configured.city:
+        match = find_location(locations, configured.country, configured.city)
+        if match is not None:
+            return DisplayLocation(
+                heading=f"{match.label}, {match.country}",
+                note=None,
+                country=match.country,
+                city=match.city,
+                label=match.label,
+                auto_picked=False,
+                matched=True,
+            )
+        heading = ", ".join(part for part in (configured.city, configured.country) if part)
+        return DisplayLocation(
+            heading=heading,
+            note=None,
+            country=configured.country,
+            city=configured.city,
+            label=configured.city,
+            auto_picked=False,
+            matched=False,
+        )
+
+    if observed is not None and (observed.city or observed.country or observed.country_code):
+        match = match_observed(locations, observed.city, observed.country, observed.country_code)
+        if match is not None:
+            return DisplayLocation(
+                heading=f"{match.label}, {match.country}",
+                note="Auto-picked",
+                country=match.country,
+                city=match.city,
+                label=match.label,
+                auto_picked=True,
+                matched=True,
+            )
+        country = observed.country or observed.country_code or ""
+        if observed.city and country:
+            heading = f"{observed.city}, {country}"
+        else:
+            heading = observed.city or country
+        return DisplayLocation(
+            heading=heading,
+            note="Auto-picked",
+            country=observed.country or "",
+            city=observed.city or "",
+            label=observed.city or "",
+            auto_picked=True,
+            matched=False,
+        )
+
+    return _unknown_display(observed)
+
+
+def _unknown_display(observed: ExitStatus | None) -> DisplayLocation:
+    if observed is not None and observed.ip:
+        note = f"Exit {observed.ip}. The city could not be read from the connection."
+    elif observed is not None and observed.error:
+        note = "No country or city is set, and the exit location could not be read. " + observed.error
+    else:
+        note = "No country or city is set, and the exit location could not be read."
+    return DisplayLocation(
+        heading="Location unknown",
+        note=note,
+        country="",
+        city="",
+        label="",
+        auto_picked=False,
+        matched=False,
+    )
 
 
 def perform_switch(

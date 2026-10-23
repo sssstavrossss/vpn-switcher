@@ -78,6 +78,12 @@ h2 {
 .muted { color: var(--muted); }
 .note { margin-top: 0.5rem; }
 
+.place-note {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .top {
   display: flex;
   align-items: flex-start;
@@ -147,6 +153,11 @@ button.text {
 .banner.info { background: var(--info); color: var(--info-text); }
 
 .loc-form { margin: 0; }
+
+/* Sibling city rows were touching: the form's own margin is 0 so the
+   buttons' borders sat on each other. The gap is the same at every
+   width; the page is a single column on a phone and on a desktop. */
+.loc-form + .loc-form { margin-top: 0.65rem; }
 
 .loc-form button {
   display: flex;

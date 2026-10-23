@@ -5,6 +5,7 @@
 const banner = document.getElementById("banner");
 const exitLine = document.getElementById("exit");
 const place = document.getElementById("place");
+const placeNote = document.getElementById("place-note");
 const list = document.getElementById("locations");
 
 let busy = false;
@@ -52,6 +53,10 @@ async function loadStatus() {
     } else if (payload.warning && banner.hidden) {
       setBanner(payload.warning, "warn");
     }
+    // When no city is saved, /status is what names the server Gluetun
+    // picked. It also turns that city's switch on. A saved city is
+    // already in the heading; this just repeats it.
+    showPlace(payload);
     if (payload.exit_ip) {
       showExit(payload.exit_ip, payload.exit_label);
     } else {
@@ -95,6 +100,12 @@ async function switchTo(form) {
     if (payload.label && payload.country) {
       place.textContent = `${payload.label}, ${payload.country}`;
     }
+    // The switch wrote the city into the env file, so it is no longer
+    // an auto-picked server.
+    if (placeNote) {
+      placeNote.hidden = true;
+      placeNote.textContent = "";
+    }
     if (payload.exit_ip) {
       showExit(payload.exit_ip, payload.exit_label);
     } else if (payload.detail) {
@@ -116,6 +127,37 @@ async function switchTo(form) {
     document.body.classList.remove("is-switching");
     setButtonsDisabled(false);
   }
+}
+
+function showPlace(payload) {
+  if (payload.place) {
+    place.textContent = payload.place;
+  }
+  if (placeNote) {
+    if (payload.note) {
+      placeNote.hidden = false;
+      placeNote.textContent = payload.note;
+    } else {
+      placeNote.hidden = true;
+      placeNote.textContent = "";
+    }
+  }
+  if (payload.matched && payload.country && payload.city) {
+    const form = findForm(payload.country, payload.city);
+    if (form) {
+      mark(form);
+    }
+  }
+}
+
+function findForm(country, city) {
+  const forms = document.querySelectorAll(".loc-form");
+  for (const form of forms) {
+    if (form.dataset.country === country && form.dataset.city === city) {
+      return form;
+    }
+  }
+  return null;
 }
 
 function mark(form) {
