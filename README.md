@@ -120,7 +120,9 @@ Run a single process. The command in the image does. A second worker would not s
 | `AIRVPN_STATUS_URL` | `https://airvpn.org/api/status/` | Server list. Cached in memory. |
 | `LOCATION_CACHE_SECONDS` | `300` | How long a successful list is reused. |
 | `LOCATION_FETCH_TIMEOUT` | `15` | Seconds for one status request. |
-| `GLUETUN_PROXY_URL` | empty | HTTP proxy on Gluetun, for example `http://host.docker.internal:8888`. The exit-IP check is skipped when this is empty. |
+| `GLUETUN_PROXY_URL` | empty | HTTP proxy on Gluetun, for example `http://host.docker.internal:8888`. The exit-IP check is skipped when this is empty. Also the fallback for the auto-picked city when the control server is not set. |
+| `GLUETUN_CONTROL_URL` | empty | Base URL of Gluetun's control server, for example `http://host.docker.internal:8000`. When no country or city is set, the page reads the connected city from `GET /v1/publicip/ip`. |
+| `GLUETUN_CONTROL_API_KEY` | empty | Sent as `X-API-Key` when the control server requires auth. Leave empty only if that server allows unauthenticated reads on your private network. |
 | `IP_INFO_URL` | `https://ipinfo.io/json` | Address lookup. `http://ip-api.com/json` works too. |
 | `COMPOSE_TIMEOUT_SECONDS` | `180` | Ceiling for `docker compose up`. |
 | `HEALTH_TIMEOUT_SECONDS` | `120` | How long to wait for Gluetun to become healthy. |
@@ -134,7 +136,9 @@ Run a single process. The command in the image does. A second worker would not s
 
 `COMPOSE_PROJECT_NAME` and other `COMPOSE_*` variables are passed through to the compose command if you set them on this container. The rest of this process's environment is not: Compose would otherwise let those variables override the stack's `.env`, including the location just written, and the password hash would be visible to the child process.
 
-The current location shown on the page is read from the running container (`CONTAINER_COUNTRY_ENV` / `CONTAINER_CITY_ENV`, falling back to the `.env` key names). If the container cannot be read, the page shows the `.env` values and says so. If the container and the file disagree, the container wins and the page says the file is different.
+The heading is the location saved in the stack `.env`, read from the running container (`CONTAINER_COUNTRY_ENV` / `CONTAINER_CITY_ENV`, falling back to the `.env` key names). If the container cannot be read, the page shows the `.env` values and says so. If the container and the file disagree, the container wins and the page says the file is different.
+
+When both the country and the city are empty, Gluetun has picked a server itself. The heading then shows where the tunnel actually is, with the note "Auto-picked", and that city's switch is on if the name matches the list. The preferred source is Gluetun's control server (`GLUETUN_CONTROL_URL`): it already knows the city and uses a full country name. If that URL is unset, or the control server has no city, the page uses the same exit lookup as the line under the heading (`GLUETUN_PROXY_URL` and `IP_INFO_URL`). A 2-letter country code from that lookup (ipinfo.io sends "NL") is matched to AirVPN's country code. If the city cannot be read, the heading says the location is unknown.
 
 ## Security
 
@@ -158,7 +162,7 @@ The layout is the whole design. There is no framework beyond FastAPI, and no dat
 | `app/envfile.py` | Read and atomically update the stack `.env`. |
 | `app/locations.py` | Fetch, filter, and cache AirVPN's status list. |
 | `app/dockerctl.py` | The `docker compose` command, health wait, and container env. |
-| `app/ipcheck.py` | Exit IP lookup through the proxy. Failure becomes a warning. |
+| `app/ipcheck.py` | Exit IP lookup, and the connected city from Gluetun's control server when no city is saved. |
 | `app/switcher.py` | One switch, start to finish, and the one-at-a-time lock. |
 | `app/templates/` | Jinja HTML. One login page, one location page. |
 | `app/static/app.js` | Stays on the page and shows "Switching…". The forms work without it. |

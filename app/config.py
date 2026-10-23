@@ -51,6 +51,10 @@ class Settings:
     location_cache_seconds: int = 300
     location_fetch_timeout: float = 15.0
     gluetun_proxy_url: str = ""
+    # Base URL of Gluetun's control server (http://host:8000), no path.
+    # Empty means "don't ask it". The API key is sent as X-API-Key.
+    gluetun_control_url: str = ""
+    gluetun_control_api_key: str = ""
     ip_info_url: str = "https://ipinfo.io/json"
     compose_timeout: float = 180.0
     health_timeout: float = 120.0
@@ -163,6 +167,8 @@ class Settings:
             location_cache_seconds=_integer("LOCATION_CACHE_SECONDS", text("LOCATION_CACHE_SECONDS"), 300),
             location_fetch_timeout=_number("LOCATION_FETCH_TIMEOUT", text("LOCATION_FETCH_TIMEOUT"), 15),
             gluetun_proxy_url=text("GLUETUN_PROXY_URL"),
+            gluetun_control_url=text("GLUETUN_CONTROL_URL"),
+            gluetun_control_api_key=text("GLUETUN_CONTROL_API_KEY"),
             ip_info_url=text("IP_INFO_URL", "https://ipinfo.io/json"),
             compose_timeout=_number("COMPOSE_TIMEOUT_SECONDS", text("COMPOSE_TIMEOUT_SECONDS"), 180),
             health_timeout=_number("HEALTH_TIMEOUT_SECONDS", text("HEALTH_TIMEOUT_SECONDS"), 120),

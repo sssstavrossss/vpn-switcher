@@ -24,6 +24,17 @@ def test_defaults_and_region_filter(tmp_path: Path) -> None:
     assert settings.city_env == "VPN_SERVER_CITIES"
     assert settings.container_country_env == "SERVER_COUNTRIES"
     assert settings.env_path == tmp_path / ".env"
+    assert settings.gluetun_control_url == ""
+    assert settings.gluetun_control_api_key == ""
+
+    control = dict(
+        base,
+        GLUETUN_CONTROL_URL="http://gluetun:8000",
+        GLUETUN_CONTROL_API_KEY="secret-key",
+    )
+    parsed_control = Settings.from_env(control)
+    assert parsed_control.gluetun_control_url == "http://gluetun:8000"
+    assert parsed_control.gluetun_control_api_key == "secret-key"
 
     all_regions = dict(base, LOCATION_REGIONS="")
     assert Settings.from_env(all_regions).regions == frozenset()
