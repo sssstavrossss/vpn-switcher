@@ -1,0 +1,10 @@
+# Pinned to the versions the tests ran against.
+fastapi==0.161.1
+uvicorn==0.54.0
+jinja2==3.1.6
+httpx==0.28.1
+bcrypt==5.0.0
+python-multipart==0.0.32
+# SessionMiddleware signs the cookie with this. Starlette no longer
+# pulls it in on its own.
+itsdangerous==2.2.0

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>VPN switcher</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%230f6b4c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="eyebrow">VPN switcher</p>
+      <h1 id="place">{{ place }}</h1>
+      <p id="exit" class="muted">Checking exit IP…</p>
+    </div>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="text">Sign out</button>
+    </form>
+  </header>
+
+  <p id="banner" class="banner {{ banner_kind }}" role="status"{% if not banner %} hidden{% endif %}>{{ banner or "" }}</p>
+  <noscript><p class="muted note">JavaScript is off, so choosing a location reloads the page.</p></noscript>
+
+  <main id="locations">
+    <p class="eyebrow">{{ region_label }}</p>
+    {% if not groups %}
+    <p class="muted">No locations to show.</p>
+    {% endif %}
+    {% for group in groups %}
+    <section>
+      <h2>{{ group.country }}</h2>
+      {% for row in group.rows %}
+      <form class="loc-form{% if row.selected %} on{% endif %}" method="post" action="/switch" data-country="{{ row.country }}" data-city="{{ row.city }}" data-label="{{ row.label }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="country" value="{{ row.country }}">
+        <input type="hidden" name="city" value="{{ row.city }}">
+        <button type="submit" aria-pressed="{{ 'true' if row.selected else 'false' }}">
+          <span class="mark" aria-hidden="true"></span>
+          <span class="name">{{ row.label }}</span>
+        </button>
+      </form>
+      {% endfor %}
+    </section>
+    {% endfor %}
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
