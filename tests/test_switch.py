@@ -429,6 +429,88 @@ def test_empty_env_says_unknown_when_the_exit_has_no_city(tmp_path: Path, monkey
     assert 'aria-pressed="true"' not in page.text
 
 
+# FastAPI would otherwise publish these with no session. /docs/oauth2-redirect
+# is the Swagger helper page that sits next to /docs.
+_DOC_PATHS = ("/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect")
+
+
+def test_generated_docs_are_not_published(tmp_path: Path) -> None:
+    app = create_app(_settings(tmp_path))
+    with TestClient(app) as client:
+        for path in _DOC_PATHS:
+            anonymous = client.get(path)
+            assert anonymous.status_code == 404, path
+
+        login_page = client.get("/login")
+        signed_in = client.post(
+            "/login",
+            data={"csrf_token": _csrf(login_page.text), "password": "test-password"},
+            follow_redirects=True,
+        )
+        assert signed_in.status_code == 200
+        for path in _DOC_PATHS:
+            # Disabled, not hidden behind the password. A signed-in browser
+            # gets the same 404.
+            assert client.get(path).status_code == 404, path
+
+
+def test_anonymous_visitors_only_receive_login_and_static_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 200 with no session is the login page or a file under /static.
+
+    Other routes redirect to login or answer 401. Docker and AirVPN are
+    patched so a route that forgot its login check fails here instead of
+    calling the network.
+    """
+    monkeypatch.setattr("app.locations.fetch_status", lambda url, timeout: SAMPLE)
+    monkeypatch.setattr("app.dockerctl.subprocess.run", lambda command, **kwargs: _empty_inspect(command))
+    app = create_app(_settings(tmp_path))
+    with TestClient(app) as client:
+        for method, path in _anonymous_requests(app):
+            response = client.request(method, path, follow_redirects=False)
+            if response.status_code == 200:
+                assert path == "/login" or path in {"/static/style.css", "/static/app.js"}, (
+                    method,
+                    path,
+                )
+            else:
+                assert response.status_code in {303, 307, 401, 403, 404, 405}, (
+                    method,
+                    path,
+                    response.status_code,
+                )
+
+
+def _anonymous_requests(app) -> list[tuple[str, str]]:
+    """One request per registered route, plus the doc URLs that must stay closed."""
+    from starlette.routing import Mount
+
+    requests: list[tuple[str, str]] = []
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        if isinstance(route, Mount) and path == "/static":
+            requests.extend(
+                [
+                    ("GET", "/static/style.css"),
+                    ("GET", "/static/app.js"),
+                    ("GET", "/static"),
+                    ("GET", "/static/"),
+                ]
+            )
+            continue
+        methods = getattr(route, "methods", None)
+        if not path or not methods or "{" in path:
+            continue
+        for method in sorted(methods):
+            if method in {"HEAD", "OPTIONS"}:
+                continue
+            requests.append((method, path))
+    for path in _DOC_PATHS:
+        requests.append(("GET", path))
+    return requests
+
+
 def _empty_inspect(command: list[str]) -> subprocess.CompletedProcess:
     if "inspect" in command:
         fmt = command[command.index("--format") + 1]

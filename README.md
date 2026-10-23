@@ -146,6 +146,7 @@ When both the country and the city are empty, Gluetun has picked a server itself
 - One shared password. The plain password is never stored. Login is checked against the bcrypt hash, and failed attempts are rate-limited in memory (per process, reset on restart).
 - The session cookie is signed, `HttpOnly`, and `SameSite=Lax`. Set `SECURE_COOKIE=true` behind HTTPS so the browser only sends it on HTTPS.
 - Login, logout, and the switch POST all require a CSRF token from the session.
+- The generated API docs (`/docs`, `/redoc`, `/openapi.json`) are turned off. Someone who is not logged in only receives the login page and its static files.
 - Docker errors are shown in the page. Lines that look like a private key, password, or token are removed first, because Compose sometimes echoes a service's environment when a command fails.
 - Do not commit `.env`. It is gitignored. `.env.example` has placeholders only.
 
