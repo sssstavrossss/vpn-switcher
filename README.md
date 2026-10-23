@@ -1,5 +1,7 @@
 # VPN switcher
 
+[![CI](https://github.com/sssstavrossss/vpn-switcher/actions/workflows/ci.yml/badge.svg)](https://github.com/sssstavrossss/vpn-switcher/actions/workflows/ci.yml)
+
 A small self-hosted web page for changing the exit location of a [Gluetun](https://github.com/qdm12/gluetun) container (AirVPN, WireGuard) from a phone browser. It runs in its own container, on a private network such as Tailscale, behind a single password.
 
 Picking a city writes that country and city into the VPN stack's `.env` file and recreates the VPN container, plus any container that shares its network (`network_mode: service:<vpn>`). Gluetun's kill switch keeps traffic from leaking while the tunnel comes back.
@@ -169,6 +171,7 @@ The layout is the whole design. There is no framework beyond FastAPI, and no dat
 | `app/static/app.js` | Stays on the page and shows "Switching…". The forms work without it. |
 | `app/static/style.css` | Mobile layout. |
 | `tests/` | pytest. Docker and AirVPN are faked. |
+| `.github/workflows/ci.yml` | pytest and a Docker image build on pull requests and on pushes to `main`. |
 
 A few Python shapes that map to C#:
 
@@ -189,3 +192,5 @@ docker build -t vpn-switcher .
 ```
 
 `pytest` does not need Docker or a network. The image build does need network access, to download the Docker CLI and Compose plugin.
+
+The same two commands run in GitHub Actions on every pull request to `main` and on every push to `main`. The image is built there and not pushed.

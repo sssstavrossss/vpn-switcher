@@ -1,0 +1,37 @@
+# pytest, then a local image build. Nothing is pushed and no secret is read.
+# The job id below is the stable name a branch ruleset can require.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest
+
+      # The runner already has a Docker daemon. This only checks that the
+      # Dockerfile still builds. The tag stays on the runner.
+      - name: Build the image
+        run: docker build --tag vpn-switcher .
